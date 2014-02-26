@@ -43,7 +43,7 @@ The deployment script has 3 functions which can be used from the command line:
 * setup
 * start
 * stop
-* 
+
 Setup will perform the following steps:
 
 1.	Check to see whether the name image “jasmine-image” exists if it does it will continue to step 7
