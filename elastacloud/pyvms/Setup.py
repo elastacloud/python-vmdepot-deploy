@@ -1,6 +1,7 @@
 from azure.storage import *
 from azure.servicemanagement import *
 from time import sleep
+import traceback
 
 from elastacloud.pyvms import Constants
 
@@ -17,9 +18,9 @@ class Setup:
         self.sms = ServiceManagementService(vars.subscription_id, vars.certificate_path)
         # if we have this image name then we won't want to do any of this
         image_exists = self._image_by_name(Constants.image_name)
+        # check to see whether we can deploy to the chosen location - if not then bail
+        self._check_locations(vars.deploy_location)
         if not image_exists:
-            # check to see whether we can deploy to the chosen location - if not then bail
-            self._check_locations(vars.deploy_location)
             print "continuing to deploy to " + vars.deploy_location
             # if the storage account doesn't exist already we'll create it - if it does we assume we own it!!!
             self._create_storage_account_if_not_exists(vars.storage_account_name, vars.deploy_location)
@@ -29,7 +30,7 @@ class Setup:
             # add the os image from the blob copy
             self.blob_service.copy_blob(container_name=Constants.storage_container_name, blob_name=Constants.vhd_blob_name, x_ms_copy_source=Constants.centos_minimal_image)
             self._wait_for_async_copy(Constants.storage_container_name, Constants.vhd_blob_name)
-            storageimage_uri = self._make_blob_url(container_name=Constants.storage_container_name, blob_name=Constants.vhd_blob_name, account_name=vars.storage_account_name, protocol="https")
+            storageimage_uri = self._make_blob_url(container_name=Constants.storage_container_name, blob_name=Constants.vhd_blob_name, account_name=vars.storage_account_name)
             print "finished copying blob with new uri " + Constants.image_name
             # the operation takes a while but when it finishes the image should be registered so that we can create a vm from it
             # add the image using add_os_image add_os_image(self, label, media_link, name, os)
@@ -80,6 +81,7 @@ class Setup:
             sleep(10)
             print "container created with the following name: " + Constants.storage_container_name
         except:
+            traceback.print_exc()
             print "container exists already continuing with the setup process"
 
     def _create_storage_account_if_not_exists(self, storage_account_name, deploy_location):
@@ -142,9 +144,12 @@ class Setup:
         # create the hosted service if it doesn't exist - currently this will only support a single VM in a cloud service
         # we'll have to use add_role with the correct deployment_name to append VMs to a cloud service
         # check here whether the cloud service exists or not
-        if not self.sms.check_hosted_service_name_availability(service_name):
+        if self.sms.check_hosted_service_name_availability(service_name):
             result = self.sms.create_hosted_service(service_name, service_name + 'elasta', 'Created by Elastacloud script', deployment_location, None, {'Author': 'azurecoder'})
             print "created cloud service " + service_name
+        else:
+            print "assuming that you own cloud service " + service_name + ", if not then this will fail!"
+
         try:
             # this will create the deployment for the first time if we want to add extra machines to the cloud service
             result = self.sms.create_virtual_machine_deployment(service_name, deployment_name, 'production',
